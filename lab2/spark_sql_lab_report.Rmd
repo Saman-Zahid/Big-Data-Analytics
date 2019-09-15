@@ -1,0 +1,558 @@
+---
+title: "BDA2"
+author: "Rabnawaz jansher & Saman Zahid"
+date: "5/21/2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# BDA2 - Spark Sql - Exercises
+
+# Question 1
+
+## Part A
+```{python, eval=FALSE}
+#sql spark imports
+from pyspark import SparkContext
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+#create a spark objec
+sc = SparkContext(appName = "Lab2 Q1")
+#create a sql context
+sqlContext = SQLContext(sc)
+
+#read a temperatue data from file
+temperatureFile = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperatureFile.map(lambda line: line.split(";"))
+
+#create temperature dataframe 
+tempReadingsRows = lines.map(lambda x: (x[0],x[1],int(x[1][0:4]),float(x[3])))
+dataFrameString = ["station","date","year","temp"]
+
+df = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+df.registerTempTable("tempReadingTable")
+
+
+#group by year and find max temperature
+df_filter = df.groupBy('year').agg(F.max('temp').alias('max_temp'))
+output = df.join(df_filter,df_filter.year == df.year ,'inner').select('station' , df_filter.year,df_filter.max_temp , df.temp)
+#filter data by year 
+output = output.where('temp = max_temp').select('station','year','max_temp').where( 'year >= 1950 and year <= 2014' )
+
+#order dataframe in descending order
+output = output.orderBy('max_temp', ascending=False)
+#convert dataframe into Rdd
+output = output.rdd
+
+#repartion result and save into file
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_1a")
+
+```
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q1a.png)
+
+## Part B
+```{python, eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+#spark sql context
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+from pyspark.sql.functions import broadcast
+
+		
+#spark context object
+sc = SparkContext(appName = "Lab2 Q5")
+
+#create a sql context
+sqlContext = SQLContext(sc)
+
+
+#temperature dataframe
+
+#read temperature data 
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+temp_lines = temperature_file.map(lambda line: line.split(";"))
+
+#temperature dataframe
+tempRows = temp_lines.map(lambda x: (x[0], x[1][0:10],int(x[1][0:4]),int(x[1][5:7]),int(x[1][8:10]), float(x[3]) ))
+tempDataString = ["station", "date", "year","month","day","temp"]
+
+
+#register temperature table
+dfTemp = sqlContext.createDataFrame(tempRows,tempDataString)
+dfTemp.registerTempTable("tempReadingTable")
+
+
+
+#filter stations by using broadcast Join
+dfTemp_filter = dfTemp.where('year >= 1960 and year <= 2014') 
+
+
+
+maxTemp = dfTemp_filter.groupBy('date','station').agg(F.max('temp').alias('max_temp'),F.min('temp').alias('min_temp'))
+
+
+
+
+output = maxTemp.rdd
+
+
+
+#for now
+#output = output.coalesce(1)
+output.saveAsTextFile("ppp")
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q1b.png)
+
+# Quesrion 2
+
+## Part A
+
+```{python, eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+#spark sql context
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+#spark context object
+sc = SparkContext(appName = "Lab1 Q2-count-records")
+
+#create a sql context
+sqlContext = SQLContext(sc)
+
+#read temperature data from file
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperature_file.map(lambda line: line.split(";"))
+
+#create a temperature datafreame
+tempReadingsRows = lines.map(lambda p: (p[0], p[1], int(p[1].split("-")[0]), int(p[1].split("-")[1]), float(p[3]),1))
+dataFrameString = ["station", "date", "year", "month", "temp","counter"]	
+
+df = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+df.registerTempTable("tempReadingTable")
+
+
+#select and filter data on year
+df_select = df.select('year','month','counter','year','temp').where( 'year >= 1950 and year <= 2014 and temp > 10' )
+#count records
+output = df_select.groupBy('year','month').agg(F.count('counter').alias('count')).orderBy('count', ascending=False)
+
+#convert dataframe into rdd
+output = output.rdd
+#repartion data and save
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_2a")
+
+
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q2a.png)
+
+
+## Part B
+
+```{python,eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+#spark sql context
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+#spark context object
+sc = SparkContext(appName = "Lab1 Q2b-count-distinct-records")
+
+#create a sql context
+sqlContext = SQLContext(sc)
+
+#read temperature from file
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperature_file.map(lambda line: line.split(";"))
+
+
+#create a data frame
+tempReadingsRows = lines.map(lambda p: (p[0], p[1], int(p[1].split("-")[0]), int(p[1].split("-")[1]), float(p[3])))
+dataFrameString = ["station", "date", "year", "month", "temp"]
+
+df = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+df.registerTempTable("tempReadingTable")
+
+
+#filter data year wise
+output = df.where(df.year >= 1950)\
+                 .where(df.year <= 2014)\
+                 .where(df.temp >= 10)
+#groupby data count distinct count                 
+output = output.groupBy(output.year, output.month).agg(F.countDistinct(output.station).alias('count_record'))\
+         .orderBy('count_record', ascending = False)
+
+
+#convert dataframe into rdd
+output = output.rdd
+
+#repartion data and save
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_2b")
+
+
+```
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q2b.png)
+
+
+
+
+
+
+
+
+
+
+
+
+# Quesrion 3
+
+```{python, eval=FALSE}
+#sql spark imports
+from pyspark import SparkContext
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+
+sc = SparkContext(appName = "Lab2 Q3")
+
+# create a sql context
+sqlContext = SQLContext(sc)
+
+# reading data
+temperatureFile = sc.textFile("/user/x_samza/data/temperature-readings.csv")
+lines = temperatureFile.map(lambda line: line.split(";"))
+
+# creating dataframe of temperatures data 
+tempReadingsRows = lines.map(lambda x: (x[0], int(x[1][8:10]) ,int(x[1][0:4]) ,int(x[1][5:7]) , float(x[3]) ))
+dataFrameString = ["station","date","year","month","temp"]
+
+df = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+df.registerTempTable("tempReadingTable")
+
+# filtering data within the period 1950 and 2014
+df = df.where('year >= 1950 and year <= 2014')
+
+# finding max temperature
+df_groupby_df = df.groupBy('year','month','date','station').agg(F.max('temp').alias('max_temperature'))
+
+# finding min temperature
+df_groupby = df.groupBy('year','month','date','station').agg(F.min('temp').alias('min_temperature'))
+
+# joining dataframes containing min and max temperature and selecting required attributes
+df_join = df_groupby_df.join(df_groupby,(df_groupby_df.year == df_groupby.year) & (df_groupby_df.month == df_groupby.month) & 
+						(df_groupby_df.date == df_groupby.date) & (df_groupby_df.station == df_groupby.station))\
+					   .select(df_groupby.year,df_groupby.month,df_groupby.date,df_groupby.station,
+					   	df_groupby.min_temperature,df_groupby_df.max_temperature)		
+
+# determining daily avg i-e (daily_max + daily_min)/2
+daily_average = df_join.withColumn('sum_min_max', (df_join.min_temperature + df_join.max_temperature)/2)
+
+# determining monthly avg by avg daily avg over stations
+monthly_avg = daily_average.groupBy('year','month','station').agg(F.avg(daily_average.sum_min_max).alias('average'))
+
+# sorting in descending order
+monthly_avg = monthly_avg.orderBy('average',ascending = False)
+
+output = monthly_avg.rdd
+output = output.coalesce(1)
+
+# saving output
+output.saveAsTextFile("lab_q2")
+
+```
+
+
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q3.png)
+
+
+
+# Quesrion 4
+
+```{python, eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+#spark sql context
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+		
+#spark context object
+sc = SparkContext(appName = "Lab1 Q4")
+
+#create a sql context
+sqlContext = SQLContext(sc)
+
+
+#read preciptate data 
+precipitation_file = sc.textFile("/user/x_rabsh/data/precipitation-readings.csv")
+precipt_lines = precipitation_file.map(lambda line: line.split(";"))
+
+#preciptiate dataframe
+preciptRows = precipt_lines.map(lambda x: (x[0], x[1][0:10], float(x[3]) ))
+preciptDataString = ["station", "date", "value"]
+
+
+#register temperature table
+dfPrecipt = sqlContext.createDataFrame(preciptRows,preciptDataString)
+dfPrecipt.registerTempTable("tempReadingTable")
+
+
+#sum preciptate
+precipt_filter = dfPrecipt.groupBy('station','date') \
+						  .agg(F.sum('value').alias('pvalue'))
+
+
+
+output_2 = precipt_filter.groupBy(precipt_filter.station)\
+							 .agg(F.max(precipt_filter.pvalue).alias('max_precipt'))  
+
+max_precipt_r = output_2.where('max_precipt >= 100 and max_precipt <= 200')
+
+
+
+
+
+
+#temperature file reading
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+temp_lines = temperature_file.map(lambda line: line.split(";"))
+
+#temperature dataframe 
+tempReadingsRows = temp_lines.map(lambda p: (p[0], p[1], int(p[1].split("-")[0]), int(p[1].split("-")[1]), float(p[3])))
+dataFrameString = ["station", "date", "year", "month", "temp"]
+
+
+#register temperature table
+
+dfTemperature = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+dfTemperature.registerTempTable("tempReadingTable")
+
+#max temperature
+
+df_filter = dfTemperature.groupBy(dfTemperature.station).agg(F.max('temp').alias('max_temp'))
+
+output = dfTemperature.join(df_filter,df_filter.station == dfTemperature.station ,'inner')\
+					  .select(dfTemperature.station , df_filter.max_temp , dfTemperature.temp)
+output = output.where('temp = max_temp')
+output = output.where('max_temp >= 20 and max_temp <= 30')
+
+combine_result = max_precipt_r.join(output, output.station == max_precipt_r.station)\
+							 .select(output.station,output.max_temp,max_precipt_r.max_precipt)
+
+
+output = combine_result.orderBy('station', ascending=False)
+output = output.rdd
+
+
+
+#for now
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_q4")
+
+```
+
+
+
+Because there is no matching between 2 Rdd, so result will be null.
+
+# Quesrion 5
+
+```{python, eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+#spark sql context
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+from pyspark.sql.functions import broadcast
+
+		
+#spark context object
+sc = SparkContext(appName = "Lab2 Q5")
+
+#create a sql context
+sqlContext = SQLContext(sc)
+
+
+#reading data
+ostergotland_file = sc.textFile("/user/x_rabsh/data/stations-Ostergotland.csv")
+
+
+#partition data
+stations = ostergotland_file.map(lambda line: line.split(";"))
+
+#station data frame 
+stationRow = stations.map(lambda x: (x[0],x[1]) )
+stationDataFrameString = ["station","name"]
+
+
+stations = sqlContext.createDataFrame(stationRow,stationDataFrameString)
+stations.registerTempTable("tempReadingTable")
+
+#boradcast stations
+
+#stations = stations.distinct().collect()
+#Os_stations = sc.broadcast(stations)
+
+
+#preciptiate dataframe
+
+#read preciptate data 
+precipitation_file = sc.textFile("/user/x_rabsh/data/precipitation-readings.csv")
+precipt_lines = precipitation_file.map(lambda line: line.split(";"))
+
+#preciptiate dataframe
+preciptRows = precipt_lines.map(lambda x: (x[0], x[1][0:10],int(x[1][0:4]),int(x[1][5:7]),int(x[1][8:10]), float(x[3]) ))
+preciptDataString = ["station", "date", "year","month","day","value"]
+
+
+#register temperature table
+dfPrecipt = sqlContext.createDataFrame(preciptRows,preciptDataString)
+dfPrecipt.registerTempTable("tempReadingTable")
+
+
+
+#filter stations by using broadcast Join
+filter_stations = stations.join(dfPrecipt , dfPrecipt.station == stations.station)\
+						  .select(stations.station,dfPrecipt.value,dfPrecipt.date,dfPrecipt.year,dfPrecipt.month,dfPrecipt.day)
+
+#groupby year,month and day and add precpitate values
+filter_stations = filter_stations.groupBy('year','month','day') \
+						  .agg(F.sum('value').alias('pvalue'))
+
+
+filter_stations = filter_stations.groupBy(filter_stations.year,filter_stations.month).agg(F.avg('pvalue').alias('avgvalue'))
+#sort data by year and month in Descending order
+filter_stations = filter_stations.orderBy(['year', 'month'], ascending=False)
+#convert datafream into Rdd
+output = filter_stations.rdd
+
+#parartion data and save
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_q5")
+
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q5.png)
+
+
+# Quesrion 6
+
+```{python, eval=FALSE}
+#sql spark imports
+from pyspark import SparkContext
+from pyspark.sql import SQLContext, Row
+from pyspark.sql import functions as F
+
+#spark object 
+sc = SparkContext(appName = "Lab2 Q6")
+#create a sql context
+sqlContext = SQLContext(sc)
+
+#reading station data
+ostergotland_file = sc.textFile("/user/x_rabsh/data/stations-Ostergotland.csv")
+
+
+#partition data
+stations = ostergotland_file.map(lambda line: line.split(";"))
+
+#station data frame 
+stationRow = stations.map(lambda x: (x[0],x[1]) )
+stationDataFrameString = ["station","name"]
+
+stations = sqlContext.createDataFrame(stationRow,stationDataFrameString)
+stations.registerTempTable("stationReadingTable")
+
+
+# reading temperature data from file
+temperatureFile = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperatureFile.map(lambda line: line.split(";"))
+
+#create a temperature dataframe
+tempReadingsRows = lines.map(lambda x: (x[0], int(x[1][8:10]) ,int(x[1][0:4]) ,int(x[1][5:7]) , float(x[3]) ))
+dataFrameString = ["station","date","year","month","temp"]
+
+df = sqlContext.createDataFrame(tempReadingsRows,dataFrameString)
+df.registerTempTable("tempReadingTable")
+
+
+#filter stations from temeperature dataframe
+station_filter = df.join(stations, df.station == stations.station)\
+			       .select(stations.station,df.date,df.month,df.year,df.temp)
+
+
+#monthly average temperature
+max_temp = station_filter.groupBy('year','month','date','station').agg(F.max('temp').alias('max_temperature'))
+min_temp = station_filter.groupBy('year','month','date','station').agg(F.min('temp').alias('min_temperature'))
+
+df_join = max_temp.join(min_temp,(min_temp.year == max_temp.year) & (min_temp.month == max_temp.month) & (min_temp.date == max_temp.date) & (min_temp.station == max_temp.station))\
+					   .select(min_temp.year,min_temp.month,min_temp.date,min_temp.station,min_temp.min_temperature,max_temp.max_temperature)		
+
+daily_average = df_join.withColumn('sum_min_max', (df_join.min_temperature + df_join.max_temperature)/2)
+
+monthly_avg = daily_average.groupBy('year','month','station').agg(F.avg(daily_average.sum_min_max).alias('average'))
+
+#average by year
+year_average_r = monthly_avg.groupBy('year','month').agg(F.avg(monthly_avg.average).alias('year_average'))
+#filter year
+year_average_r = year_average_r.where('year >= 1950 and year <= 1980')
+
+#long term average 
+long_term_average_r = year_average_r.groupBy(year_average_r.month).agg(F.avg(year_average_r.year_average).alias('long_term_average'))
+
+long_term_average_r = year_average_r.join(long_term_average_r, long_term_average_r.month == year_average_r.month,'left_outer')\
+										.select(year_average_r.year,year_average_r.year_average,year_average_r.month,long_term_average_r.long_term_average)
+
+
+#find a difference in temperature
+difference_temp = long_term_average_r.withColumn('difference_temp', (long_term_average_r.year_average - long_term_average_r.long_term_average))
+
+difference_temp = difference_temp.select('year','month','difference_temp').orderBy(['year', 'month'], ascending=False)								
+
+output = difference_temp.rdd
+
+output = output.coalesce(1)
+output.saveAsTextFile("lab2_q6")
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/q6.png)
+
+
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/bigdata_lab3-sparksql/images/Rplot.png)
+
+

@@ -1,0 +1,455 @@
+---
+title: "BIG DATA LAB 1"
+author: "Rabnawaz Jansher & Saman Zahid"
+date: "7 May 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# BDA1 -Spark -Exercises
+
+# Question 1
+
+## Part A
+```{python, eval=FALSE}
+from pyspark import SparkContext
+
+# function for calculating max temperature 
+# also returns associated stations
+
+def max_temperature(a,b):
+	if a[0]>=b[0]:
+		return a
+	else:
+		return b
+
+sc = SparkContext(appName = "lab1-q1")
+
+# reading data
+temperature_file = sc.textFile("/user/x_samza/data/temperature-readings.csv")
+
+# splitting columns
+lines = temperature_file.map(lambda line: line.split(";"))
+
+# making key value pair keeping year as key and temp and station as values
+station_year_temperature = lines.map(lambda x: (x[1][0:4],(float(x[3]),x[0])))
+
+# filtering data between 1950 and 2014
+station_year_temperature = station_year_temperature.filter(lambda x: int(x[0]) >= 1950 and int(x[0]) <= 2014)
+
+# finding max_temperature based on key - 'year'
+max_temperatures = station_year_temperature.reduceByKey(lambda (x11,x21),(x12,x22): max_temperature((x11,x21),(x12,x22)))
+
+# sorting result in descending order of max temperature
+max_temperatureSorted = max_temperatures.sortBy(ascending = False , keyfunc = lambda k : k[1][0])
+
+# saving result to hadoop
+max_temperatureSorted.saveAsTextFile("max_temperature_station")
+
+```
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q1_a.png)
+
+
+## Part B
+```{python, eval=FALSE}
+#non parallel python program
+#import csv
+import csv
+
+import time
+
+
+start_time = time.time()
+#dict 
+data = {}
+
+
+# read data 
+with open('/nfshome/hadoop_examples/shared_data/temperatures-big.csv') as csvDataFile:
+    #split data 
+    csvReader = csv.reader(csvDataFile,delimiter=';')
+    for row in csvReader:
+		year = int(row[1][0:4])
+		#filter data and compare temperature 
+		if int(year) >= 1950 and int(year) <= 2014:
+			temp = float(row[3])
+			if not data:
+				data[year] = temp
+			else:
+				if year in data.keys():
+					if data[year] < temp:
+						data[year] = temp
+				else:
+					data[year] = temp
+		
+#sort data
+for row in sorted(data.items(),key=lambda x: (x[1],x[0]),reverse=True):
+  print row
+
+
+#print time
+print("--- %s seconds ---" % (time.time() - start_time))
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q1_b.png)
+
+
+### comparison
+
+Spark Program Execution time on `temperature-big csv` is `4 minutes` 
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/h1.png)
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/h2.png)
+
+Non Parallel python Program Execution
+
+`3028.12795806 second which is equal to 50 minutes`
+
+### Reason
+It is because spark excute a program in parallel on distributed environment so its excution time is less than non parallel excution of program.  
+
+# Quesrion 2
+
+## Part A
+
+```{python, eval=FALSE}
+#import spark libraries
+from pyspark import SparkContext
+from operator import add
+
+#spark context object
+sc = SparkContext(appName = "Lab1 Q2-count-records")
+
+#read temperature
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperature_file.map(lambda line: line.split(";"))
+
+
+#filter data year 1950 t0 2014 and temperature greater than 10
+temperature = lines.filter(lambda x: int(x[1][0:4])>=1950 and int(x[1][0:4]) 
+                          <= 2014 and float(x[3]) > 10)
+year_temperature = temperature.map(lambda x: (x[1][0:7], 1))
+count = year_temperature.reduceByKey(add)
+
+
+#repartion data and save
+monthly_temperatures_count = count.repartition(1)
+monthly_temperatures_count.saveAsTextFile("lab1_q2a")
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q2.png)
+
+## Part B
+
+```{python,eval=FALSE}
+from pyspark import SparkContext
+
+#count distinct elements
+def count_distinct(a,b):
+	return (a[0], a[1]+b[1])
+		
+sc = SparkContext(appName = "Lab1 Q2-distnict elements")
+
+#read a data
+temperature_file = sc.textFile("/user/x_rabsh/data/temperature-readings.csv")
+lines = temperature_file.map(lambda line: line.split(";"))
+
+
+#filter temperature 1950 to 2014 and temperature greater than 10
+temperature = lines.filter(lambda x: int(x[1][0:4])>=1950 and int(x[1][0:4])
+                          <= 2014 and float(x[3]) > 10)
+year_temperature = temperature.map(lambda x: (x[1][0:7], (x[0],1) )).distinct()
+
+
+count = year_temperature.reduceByKey(lambda v1, v2: count_distinct(v1,v2))
+#count elements
+count = count.map(lambda x: (x[0], x[1][1])) 
+
+#repartition data and save
+monthly_temperatures_count = count.repartition(1)
+monthly_temperatures_count.saveAsTextFile("lab1_q2b")
+```
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q2_b.png)
+
+
+# Quesrion 3
+
+```{python, eval=FALSE}
+
+# importing spark context
+from pyspark import SparkContext
+
+# function for calculating max temperature
+def max_temp(a,b):
+	if a >= b:
+		return a
+	else:
+		return b
+	
+# function for calculating min temperature
+def min_temp(a,b):
+	if a <= b:
+		return a
+	else:
+		return b
+
+# defining spar context		
+sc = SparkContext(appName = "lab1-q3")
+
+# reading temperature data file
+temperature_file = sc.textFile("/user/x_samza/data/temperature-readings.csv")
+
+# splitting columns in data
+lines = temperature_file.map(lambda line: line.split(";"))
+
+# generating key-value pair with year-month-date and station as key and temperature as value
+year_temperature = lines.map(lambda x: ((x[1][0:10],x[0]),float(x[3])))
+
+# filtering data between 1950 and 2014
+year_temperature = year_temperature.filter(lambda x: int(x[0][0][0:4]) >= 1950 and int(x[0][0][0:4]) <= 2014)
+
+# Calculating max temperature
+max_temperatures = year_temperature.reduceByKey(max_temp)
+
+# Calculating min temperature
+min_temperature = year_temperature.reduceByKey(min_temp)
+
+# Joining max_temperature RDD and min temperature RDD
+max_min_temperatures = max_temperatures.join(min_temperature)
+
+# Adding min and max temperature and associating count value to use later
+monthly_temp = max_min_temperatures.map(lambda x: ((x[0][0][0:7],x[0][1]), (float(x[1][0])+float(x[1][1]),2) ))
+
+# Adding previous and current temperature and count on the basis of key
+monthly_avg_temp = monthly_temp.reduceByKey(lambda (temp1, count1), (temp2, count2): (temp1+temp2, count1+count2))
+
+# mapping required columns and calculating avg by dividing the sum of daily avg by totat no. of days in month
+monthly_avg_temp = monthly_avg_temp.map(lambda ((date, station), (sumTemp, sumCount)): ((date, station), sumTemp/float(sumCount)))
+
+# repartitioning to form single RDD
+max_temperature_monthly= monthly_avg_temp.repartition(1)
+
+# Sorting result in descending order
+max_temperature_monthly = max_temperature_monthly.sortBy(ascending = False , keyfunc = (lambda k : k[1]))
+
+# Saving File
+max_temperature_monthly.saveAsTextFile("avg_temperature_station")
+
+```
+
+
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q3.png)
+
+
+# Quesrion 4
+
+```{python, eval=FALSE}
+
+# importing Spark Context
+from pyspark import SparkContext
+
+# Function to calculate maximum temperature and precipitation
+def max_fun(a,b):
+	if a >= b:
+		return a
+	else:
+		return b
+
+# Function to calculate sum of daily precipitation	
+def daily_prec(a,b):
+	return a+b
+
+# adding spark context	
+sc = SparkContext(appName = "lab1-q4")
+
+# reading temperature data
+temperature_file = sc.textFile("/user/x_samza/data/temperature-readings.csv")
+
+# reading precipitation data
+precipitation_file = sc.textFile("/user/x_samza/data/precipitation-readings.csv")
+
+# splitting temperature data into columns
+lines = temperature_file.map(lambda line: line.split(";"))
+
+# forming a key value pair keeping station as key and temperature as value
+station_temperature = lines.map(lambda x: (x[0],float(x[3])))
+
+# finding max temperature for each station
+max_temperatures = station_temperature.reduceByKey(max_fun)
+
+# filtering max temperature between 25 and 30 degrees
+max_temperatures = max_temperatures.filter(lambda x: x[1] >= 25 and x[1] <= 30)
+
+# splitting precipitation data into columns
+lines_prec = lines = precipitation_file.map(lambda line: line.split(";"))
+
+# forming a key value pair keeping date and station as key and temperature as value
+station_precipitation = lines_prec.map(lambda x: ((x[0],x[1]),float(x[3])))
+
+# calculating sum of precipitation for each day for each station
+daily_precipitation = station_precipitation.reduceByKey(daily_prec)
+
+# creating a key-value pair keeping station as key and daily precipitation as value
+daily_precipitation = daily_precipitation.map(lambda x: (x[0][0],float(x[1])))
+
+# calculating max daily precipitation for each station
+max_precipitation_station = daily_precipitation.reduceByKey(max_fun)
+
+# filtering max daily precipitation between 100 and 200 mm
+max_precipitation_station = max_precipitation_station.filter(lambda x: x[1] >= 100 and x[1] <= 200)
+
+# joining result of max temperature and max daily precipitation on the basis of stations
+max_result = max_temperatures.join(max_precipitation_station)
+
+# saving result
+max_result.saveAsTextFile("prec_temp_station")
+
+
+
+```
+
+
+
+Because there is no matching between 2 Rdd, so result will be null.
+
+# Quesrion 5
+
+```{python, eval=FALSE}
+
+
+# importing required context
+from pyspark import SparkContext
+from operator import add
+
+		
+sc = SparkContext(appName = "Lab1 Q5")
+#reading data
+ostergotland_file = sc.textFile("/user/x_samza/data/stations-Ostergotland.csv")
+
+
+#partition data
+stations = ostergotland_file.map(lambda line: line.split(";"))
+
+
+map_oster = stations.map(lambda x: (x[0]) )
+
+# collect and broadcast Stations
+stations = map_oster.distinct().collect()
+Os_stations = sc.broadcast(stations)
+
+
+precipitation_file = sc.textFile("/user/x_samza/data/precipitation-readings.csv")
+precipt_lines = precipitation_file.map(lambda line: line.split(";"))
+
+#filter stations
+filter_precipt = precipt_lines.filter(lambda x: x[0] in Os_stations.value )
+
+#making key-value pair keeping year-month and stations as key and precipitation as value 
+map_precipt =  filter_precipt.map(lambda x: ((x[1][0:7],x[0]),float(x[3])))
+
+#calculating total monthly precipitation
+monthly_prec = map_precipt.reduceByKey(add)
+
+#find average and count
+avg_prec = monthly_prec.map(lambda x: ((x[0][0], (float(x[1]) ,1)  )))
+result = avg_prec.reduceByKey(lambda x,y: ( (x[0] + y[0]) , (x[1] + y[1]) ))
+
+result = result.map(lambda x: (x[0] , float(x[1][0] / x[1][1])))
+
+#partition and save data
+output = result.repartition(1)
+output.saveAsTextFile("lab1_q5")
+
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q5.png)
+
+
+# Quesrion 6
+
+```{python, eval=FALSE}
+
+from pyspark import SparkContext
+from operator import add
+
+sc = SparkContext(appName = "lab1 q6")
+staOstergotland_file = sc.textFile("/user/x_samza/data/stations-Ostergotland.csv")
+lines = staOstergotland_file.map(lambda line: line.split(";"))
+
+#collect and broadcast
+stations = lines.map(lambda x: int(x[0]))
+stations = stations.distinct().collect() #collect to a python list
+Os_stations = sc.broadcast(stations)
+
+#read temperature file
+temperature_file = sc.textFile("/user/x_samza/data/temperature-readings.csv")
+lines_tempFile = temperature_file.map(lambda line: line.split(";"))
+
+
+#Filter out Ostergoland stations
+temperatures = lines_tempFile.filter(lambda x: (int(x[1][0:4]) >= 1950 and int(x[1][0:4]) <= 2014 and (x[0] in Os_stations.value)))
+
+
+
+#monthly average temperature
+map_temperature = temperatures.map(lambda x: ((x[1], int(x[0])), (float(x[3]), float(x[3]))))
+min_max_temp = map_temperature.reduceByKey(lambda x, y:(min(x[0], y[0]), max(x[1], y[1])))
+
+min_max_temp = min_max_temp.map(lambda x: ((x[0][0][0:7], x[0][1]), (x[1][0]+x[1][1], 2)))
+min_max_temp = min_max_temp.reduceByKey(lambda x,y: (x[0]+y[0], x[1]+y[1]))
+average_by_month = min_max_temp.map(lambda x: ( (x[0][0]), (float(x[1][0]/ x[1][1]) , 1))) 
+
+
+#year average 
+#average_by_year = average_by_month.map(lambda x: (x[0], (x[1], 1)))
+average_by_year = average_by_month.reduceByKey(lambda x, y: (x[0] + y[0], x[1] + y[1]))
+average_by_year = average_by_year.map(lambda x: (x[0], x[1][0] / x[1][1] ))
+
+
+#filter year 1950 to 1980
+average_longTerm = average_by_year.filter(lambda x: (int(x[0][0:4]) >= 1950 and int(x[0][0:4]) <= 1980))
+average_longTerm = average_longTerm.map(lambda x: (x[0][5:7], (x[1], 1)))
+
+average_longTerm = average_longTerm.reduceByKey(lambda x, y: (x[0] + y[0], x[1] + y[1]))
+average_longTerm=average_longTerm.map(lambda x: (x[0], x[1][0]/x[1][1] ))
+
+
+
+#collecting the result and map with average year
+
+results = average_longTerm.collect()
+monthAvg = {month: temperature for (month, temperature) in results}
+
+difference_temp = average_by_year.map(lambda x: (x[0], abs(x[1])-abs(monthAvg.get(x[0][5:7], 0))))
+
+#save result to output
+difference_results = difference_temp.repartition(1)\
+            .saveAsTextFile("lab1_q6")
+
+```
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q6.png)
+
+
+
+
+![](/Users/rabnawazjansher/Documents/study_2/Semester 2/Big dataAnalysis/labs/big data lab2/images/q6plot.png)
+
